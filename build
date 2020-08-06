@@ -1,0 +1,6 @@
+#!/bin/bash
+
+xa -l toc -o ./vic/helixcolony.bin ./src/helixcolony.asm
+printf "\x01\x10" | cat - ./vic/helixcolony.bin > ./vic/helixcolony
+cp ./vic/helixcolony ~/vic20/helixcolony
+
