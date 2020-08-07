@@ -70,8 +70,8 @@ CHAR_D      = $23               ; Destination bitmap character code
 
 ; System Resources
 CINV        = $0314             ; ISR vector
-;NMINV       = $0318             ; Release NMI vector
-NMINV       = $fffe             ; Development NMI non-vector
+NMINV       = $0318             ; Release NMI vector
+;NMINV       = $fffe             ; Development NMI non-vector
 SCREEN      = $1e00             ; Screen character memory (unexpanded)
 COLOR       = $9600             ; Screen color memory (unexpanded)
 IRQ         = $eabf             ; System ISR   
@@ -114,6 +114,11 @@ Startup:    jsr SetupHW         ; Set up hardware
 ; Welcome Screen
 ; Show intro, set level, then show manual page      
 Welcome:    jsr MStop
+            lda #$00            ; Shut off all sounds
+            sta VOICEL          ; ,,
+            sta VOICEM          ; ,,
+            sta VOICEH          ; ,,
+            sta NOISE           ; ,,
             jsr CLSR            ; Clear screen
             ldy #5              ; Draw Hab
             jsr TextLine        ; ,,
@@ -264,7 +269,7 @@ GameOver:   lda #$0f            ; Fade out the music
             lda #$64
             jsr Delay
 bonus1:     lda COL_CT          ; Add points for each remaining
-            beq bonus2          ;   colonist
+            beq scored          ;   colonist
             dec COL_CT          ;   ,,
             lda #COL_BONUS      ; Add remaining colonist bonus
             jsr AddEnergy       ; ,,
@@ -276,8 +281,8 @@ bonus1:     lda COL_CT          ; Add points for each remaining
             jsr Delay
             jmp bonus1
 bonus2:     lda MINE_CT         ; Add points for each successful mine
-            beq scored          ;   built
-            dec MINE_CT         ;   ,,
+            beq scored          ;   built ONLY IF there is at least one
+            dec MINE_CT         ;   colonist left (see bonus1 above)
             lda #MINE_COST      ; Add mine cost bonus
             jsr AddEnergy       ; ,,
             jsr ScoreBar
@@ -317,9 +322,9 @@ TogBuild:   jsr RSCursor        ; Set Cursor to the player position
 set_bf:     lda #$80            ; If it's clear, set it
             sta BUILD_FLAG      ; ,,
             ldy #CH_LANDED      ; And also change the default character (land)
-            .byte $3c           ; TOP (skip word)
+            bne draw_ship
 clear_bf:   lsr BUILD_FLAG      ; Clear the build flag
-            tya                 ; Draw the ship based on the new state
+draw_ship:  tya                 ; Draw the ship based on the new state
             ldy #CO_PLAYER      ; ,,
             jsr DrawChar        ; ,,
             bit BUILD_FLAG      ; Select music based on state of flag
@@ -1005,7 +1010,7 @@ NewGeiser:  tya
 ; Allow player to set starting energy, and return when Fire is pressed
 SetLevel:   jsr Joystick        ; Debounce the joystick
             bne SetLevel        ; ,,
-            ldy #17             ; Show the "LEVEL" text
+            ldy #16             ; Show the "LEVEL" text
             jsr TextLine        ; ,,
             lda #<LevelTx       ; ,,
             ldy #>LevelTx       ; ,,
@@ -1042,8 +1047,8 @@ set_done:   lda #$04            ; Play a sound when the level changes
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; DATA
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-Intro:      .asc $0d,$0d,$1c,"     H",$1e,"ELIX",$1c,"C",$1e,"OLONY",$0d
-            .asc $1e,"     J",$1c,"ASON",$1e,"J",$1c,"USTIAN",$0d
+Intro:      .asc $0d,$0d,$0d,$1c,"     H",$1e,"ELIX",$1c,"C",$1e,"OLONY",$0d,$0d
+            .asc $1e,"     J",$1c,"ASON",$1e,"J",$1c,"USTIAN",$0d,$0d
             .asc $1c,"     P",$1e,"RESS",$1c,"F",$1e,"IRE",$00
 
 ; Hab Image
@@ -1051,15 +1056,15 @@ DrawHab:    .asc "          "
             .asc $1e,$5b,$11,$9d,$5c,$11,$9d,$9d,$5d," ",$5e,$00
 
 ; Manual Text            
-Manual:     .asc $93,$1c,"I",$1e,"T IS THE  YEAR 1999",$0d,$0d,$0d
-            .asc $1c,"E",$1e,"ARTH  HAS ENTRUSTED",$0d,$0d
+Manual:     .asc $93,$1e,"IT IS THE  YEAR 1999",$0d,$0d,$0d
+            .asc "EARTH  HAS ENTRUSTED",$0d,$0d
             .asc "YOU TO ESTABLISH THE",$0d,$0d
             .asc "HELIX COLONY  IN THE",$0d,$0d
             .asc "PROCYON SYSTEM",$0d,$0d,$0d
             .asc $9e,$21,$1c," EXPLORE",$1e," THE PLANET",$0d,$0d
             .asc $9f,$25,$1c," BUILD",$1e,"  GAMMA MINES",$0d,$0d
             .asc $1e,$2a,$1c," PROTECT",$1e,"  YOUR CREW",$0d,$0d,$0d
-            .asc $1c,"Y",$1e,"OU HAVE  SIXTY DAYS",$0d,$0d,$0d
+            .asc "YOU HAVE  SIXTY DAYS",$0d,$0d,$0d
             .asc "           ",$1c,"A",$1e,"GENT",$1c,"A",$1e,"NZU",$00
 
 ; Score Bar            
@@ -1080,10 +1085,10 @@ BuildTx:    .asc " ",$9e,$3a," 50 ",$1e,"MOVE TO BUILD "
             .asc $9f,CH_BADMINE,$1e,$00  
             
 ; Set Level Text and Table            
-LevelTx:    .asc $1e,"     L",$1c,"EVEL ",$00  
-NormalTx:   .asc $9e,"NORMAL",$00
-HarderTx:   .asc $1c,"HARDER",$00
-EasierTx:   .asc $1e,"EASIER",$00
+LevelTx:    .asc $1e,"     L",$1c,"EVEL",$00  
+NormalTx:   .asc $1e,"N",$1c,"ORMAL",$00
+HarderTx:   .asc $1e,"H",$1c,"ARDER",$00
+EasierTx:   .asc $1e,"E",$1c,"ASIER",$00
 LevelNameL: .byte <NormalTx,<HarderTx,<EasierTx
 LevelNameH: .byte >NormalTx,>HarderTx,>EasierTx
  
@@ -1138,7 +1143,7 @@ Padding:    .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
             .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
             .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
             .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
+            .asc "ALLWORKANDNOPLAYMA"
             
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; VARIABLES

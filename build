@@ -2,5 +2,8 @@
 
 xa -l toc -o ./vic/helixcolony.bin ./src/helixcolony.asm
 printf "\x01\x10" | cat - ./vic/helixcolony.bin > ./vic/helixcolony
+rm vic/helix.d64
+c1541 -format helix,8 d64 vic/helix.d64 -write vic/helixcolony
+
 cp ./vic/helixcolony ~/vic20/h
 
