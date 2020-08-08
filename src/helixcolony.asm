@@ -70,8 +70,8 @@ CHAR_D      = $23               ; Destination bitmap character code
 
 ; System Resources
 CINV        = $0314             ; ISR vector
-NMINV       = $0318             ; Release NMI vector
-;NMINV       = $fffe             ; Development NMI non-vector
+;NMINV       = $0318             ; Release NMI vector
+NMINV       = $fffe             ; Development NMI non-vector
 SCREEN      = $1e00             ; Screen character memory (unexpanded)
 COLOR       = $9600             ; Screen color memory (unexpanded)
 IRQ         = $eabf             ; System ISR   
@@ -80,7 +80,7 @@ RNDNUM      = $8d               ; Result storage location for RND()
 VICCR5      = $9005             ; Character map register
 VOICEH      = $900c             ; High sound register
 VOICEM      = $900b             ; Mid sound register
-VOICEL      = $900a             ; Low sound register (unused)
+VOICEL      = $900a             ; Low sound register
 NOISE       = $900d             ; Noise register
 VOLUME      = $900e             ; Sound volume register/aux color
 BACKGD      = $900f             ; Background color
@@ -101,6 +101,7 @@ TIME_M      = $a1               ; Jiffy counter middle
 ; Game Memory - Zeropage Pointers
 CURSOR      = $f9               ; Cursor (2 bytes)
 PLAYER      = $fb               ; Player location (2 bytes)
+CUR_NOTE    = $fd               ; Current score note (2 bytes)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; MAIN PROGRAM
@@ -113,7 +114,7 @@ Startup:    jsr SetupHW         ; Set up hardware
            
 ; Welcome Screen
 ; Show intro, set level, then show manual page      
-Welcome:    jsr MStop
+Welcome:    jsr wsStop
             lda #$00            ; Shut off all sounds
             sta VOICEL          ; ,,
             sta VOICEM          ; ,,
@@ -148,8 +149,11 @@ ch_end:     lda COL_CT          ; Any colonists left?
             bcc game_on         ; ,,
 game_over:  jmp GameOver        ; Game Over if any game-ending conditions
 game_on:    jsr Joystick        ; Read the joystick
-            beq Main            ; If not moved, check again
-            cmp #FIRE           ; Has fire been pressed?
+            bne ch_fire         ; If no movement, shut off the engine noise
+            lda #$00            ;   and check joystick again
+            sta NOISE           ;   ,,
+            beq Main            ;   ,,
+ch_fire:    cmp #FIRE           ; Has fire been pressed?
             bne han_dir         ; If not, handle a direction
             jsr TogBuild        ; If fire, toggle the build flag
             jmp Main
@@ -167,12 +171,13 @@ ISR:        lda TIME_L
             sta SCORE_FLAG
             jsr DailyMaint      ; Daily energy maintenance production and usage
             inc DAY
-            lda THEME           ; Every day, slightly modify the music
-            eor #$01            ; ,,
-            sta THEME           ; ,,
-music:      jsr NextNote
-            jsr NextFX
-            jmp IRQ           
+music:      lda TIME_L          ; Flash aux color
+            and #$f0
+            eor VOLUME
+            sta VOLUME
+            jsr wsService       ; wAxScore Player
+            jsr NextFX          ; Sound Effect generator
+hw_irq:     jmp IRQ           
             
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; GAME MECHANICS ROUTINES
@@ -261,15 +266,16 @@ show_day:   lda #$00
             jmp PRTFIX
             
 ; Game Over
-GameOver:   lda #$0f            ; Fade out the music
-            sta FADE            ; ,,
+GameOver:   jsr wsStop          ; Stop the music
             lda #<GameOverTx    ; Show Game Over message
             ldy #>GameOverTx    ; ,,
             jsr PRTSTR          ; ,,
             lda #$64
             jsr Delay
+            lda COL_CT          ; If there are no colonists left, the player
+            beq scored          ;   gets no mine bonus
 bonus1:     lda COL_CT          ; Add points for each remaining
-            beq scored          ;   colonist
+            beq bonus2          ;   colonist
             dec COL_CT          ;   ,,
             lda #COL_BONUS      ; Add remaining colonist bonus
             jsr AddEnergy       ; ,,
@@ -282,7 +288,7 @@ bonus1:     lda COL_CT          ; Add points for each remaining
             jmp bonus1
 bonus2:     lda MINE_CT         ; Add points for each successful mine
             beq scored          ;   built ONLY IF there is at least one
-            dec MINE_CT         ;   colonist left (see bonus1 above)
+            dec MINE_CT         ;   colonist left
             lda #MINE_COST      ; Add mine cost bonus
             jsr AddEnergy       ; ,,
             jsr ScoreBar
@@ -329,23 +335,13 @@ draw_ship:  tya                 ; Draw the ship based on the new state
             jsr DrawChar        ; ,,
             bit BUILD_FLAG      ; Select music based on state of flag
             bpl build_off       ; ,,
-            lda THEME           ; Save the main theme's variation, so that
-            sta THEME_TMP       ;   it can be restored when the build is over
-            lda THEME+1         ;   ,,
-            sta THEME_TMP+1     ;   ,,
-            lda #$01            ; Select the build theme
-            jsr Music           ; ,,
             ldy #22             ; Show help for build
             jsr TextLine        ; ,,
             lda #<BuildTx       ; ,,
             ldy #>BuildTx       ; ,,
             jsr PRTSTR          ; ,,
             jmp debounce
-build_off:  lda THEME_TMP       ; Restore the main theme where it left off
-            sta THEME           ; ,,
-            lda THEME_TMP+1     ; ,,
-            sta THEME+1         ; ,,
-            jsr StatusBar       ; Replace help with status bar
+build_off:  jsr StatusBar       ; Replace help with status bar
 debounce:   lda #$14            ; Short delay to debounce the fire button
             jmp Delay           ; ,,
 
@@ -420,60 +416,88 @@ maint_use:  lda #$01            ; The colonists use one energy per day
             rts            
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;; MUSIC AND EFFECT PLAYER SUBROUTINES
+; WAXSCORE IRQ PLAYER
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Start the music player
-MPlay:      lda #$01
-            sta PLAY
+; Reset Score to Start
+wsReset:    lda #<Theme
+            sta CUR_NOTE
+            lda #>Theme
+            sta CUR_NOTE+1
             lda #$00
-            sta FADE
+            sta COUNTDOWN
             rts
-    
-; Stop the music player
-MStop:      lda #$00
-            sta VOICEL
-            sta PLAY
+
+; Begin Playing
+wsPlay:     lda #$80
+            sta PLAY_FLAG
             rts
             
-; Select Music
-; Set a musical theme 
-;
-; Preparations
-;     A is the theme index
-Music:      asl                 ; Multiply level by 2 for theme index
+; Stop Playing
+wsStop:     lda #$00
+            sta PLAY_FLAG
+            sta VOICEM
+            sta VOICEL
+            rts
+            
+; Service Routine           
+wsService:  bit PLAY_FLAG
+            bpl svc_r
+            lda COUNTDOWN
+            beq fetch_note
+            dec COUNTDOWN
+            lda VOLUME
+            and #$0f
+            cmp #$0f
+            beq svc_r
+            inc VOLUME
+            rts
+fetch_note: ldx #$00
+            stx COUNTDOWN       ; Initialize countdown
+            lda (CUR_NOTE,x)
+            beq eos             ; End of score
+            tay                 ; Y holds the full note data
+            and #$0f            ; Mask away the duration
+            cmp #$0f            ; Is this a effect?
+            beq effect
             tax
-            lda Themes,X        ; Set the musical theme
-            sta THEME 
-            lda Themes+1,X
-            sta THEME+1
-            rts            
-                                
-; Play Next Note
-; Rotates the 16-bit register one bit to the left
-; and plays the note
-NextNote:   lda #$01
-            bit PLAY
-            beq note_r
-            dec MUCD 
-            bne note_r
-            lda TEMPO
-            sta MUCD
-            lda #$00            ; Shift the register left
-            asl THEME           ; ,,
-            rol THEME+1         ; ,,
-            adc THEME           ; ,,
-            sta THEME           ; ,,
-            ora #$80            ; Gate the voice
-            sta VOICEL          ; ,,
-            lda FADE            ; Fade is a volume override. If fade is
-            beq volreg          ;   set, it will decrease every note,
-            dec FADE            ;   and the music will stop when it
-            bne vol             ;   reaches zero
-            jmp MStop
-volreg:     lda THEME+1         ; Set the music volume and flash
-vol:        sta VOLUME          ;   the aux color
-note_r:     rts
+            lda Oct0,x
+            sta VOICEM
+            lda DIR             ; If the ship is in motion, don't
+            bne keep_vol        ;   mess with the volume
+            tya                 ; If the duration is shorter than a
+            cpy #$30            ;   dotted quarter note, don't mess
+            bcc keep_vol        ;   with the volume
+            lda #$00            ; Start at min volume
+            sta VOLUME          ; ,,
+keep_vol:   tya
+            and #$f0            ; Mask away the note index
+            lsr
+            lsr
+            lsr
+            lsr
+            ldy TEMPO
+-loop:      clc
+            adc COUNTDOWN
+            sta COUNTDOWN
+            dey
+            bne loop
+            inc CUR_NOTE
+            bne svc_r
+            inc CUR_NOTE+1
+svc_r:      rts
+eos:        jsr wsReset
+            rts       
 
+; Apply Effect
+; The effect index is in Y            
+effect:     cpy #$00            ; Handle Placeholder
+            bne ch_non_ph       ; ,,
+            rts
+ch_non_ph:  rts                 ; Implement other effects            
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; EFFECT PLAYER SUBROUTINES
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Play Next Sound Effect
 ; Rotates the 8-bit sound effect register and
 ; plays the pitch      
@@ -512,6 +536,8 @@ Sound:      sei                 ; Don't play anything while setting up
             sta FXCDRS          ; Record the reset value
             sta FXCD            ; Set the countdown
             ldx SCRPAD
+            lda #$fc            ; Set high volume
+            sta VOLUME          ; ,,
             cli                 ; Go! 
             rts
         
@@ -575,12 +601,7 @@ may_move:   sta DIR             ; Set the direction
             dey                 ;   ,,
             bpl loop            ;   ,,
             jsr RSCursor
-            lda DIR             ; Engine noise
-            asl                 ; ,,
-            asl                 ; ,,
-            asl                 ; ,,
-            asl                 ; ,,
-            ora #$80            ; ,,
+            lda #$ff            ; Play engine noise
             sta NOISE           ; ,,
             lda #CHAR_S         ; Draw the bitmap source character at the
             ldy #CO_PLAYER      ;   player location
@@ -625,8 +646,8 @@ do_move:    pha                 ; Put character on stack for later use as UNDER
             jsr DrawChar        ; ,,
             lda #$01            ; Take one energy unit per turn
             jsr UseEnergy       ; ,,
-            lda #$00
-            sta NOISE
+            lda #$00            ; Set DIR to 0, which will allow volume to go
+            sta DIR             ;   low via the music player
             ; Fall through to Sensor
 
 ; Activate Sensor    
@@ -677,6 +698,13 @@ sensor_r:   jmp StatusBar
 ; Move player back to starting point           
 Dead:       lda #$7f            ; Set aux color and high volume
             sta VOLUME          ; ,,
+            lda #$d0            ; Explosion noise
+            sta NOISE           ; ,,
+            lda #CH_PLAYER      ; Set character of destroyed ship
+            ldy #$0c            ; Set color of destroyed ship
+            jsr DrawChar        ; ,,
+            lda #$10
+            jsr Delay
             lda #$00            ; Set character of destroyed ship
             ldy #$09            ; Set color of destroyed ship
             jsr DrawChar        ; ,,
@@ -684,6 +712,8 @@ Dead:       lda #$7f            ; Set aux color and high volume
             jsr Sound           ; ,,
             lda #$40            ; Delay for destruction
             jsr Delay           ; ,,
+            lda #$00            ; Shut off the explosion sound
+            sta NOISE           ; ,,
             lda #CH_GEISER      ; Mise well show the player where the
             ldy #CO_GEISER_V    ;   geiser is
             jsr DrawChar        ;   ,,
@@ -892,10 +922,8 @@ SetupHW:    lda TIME_L          ; Seed random number generator
             
 ; Initialize Game
 InitGame:   jsr CLSR
-            lda #$05            ; Play game startup sound
-            jsr Sound           ; ,,
-            lda #$09            ; Initialize Tempo
-            sta TEMPO           ; ,,
+            jsr wsReset         ; Reset music
+            jsr wsPlay          ; Start music
             lda #<ST_ENERGY     ; Initialize Energy to starting value
             sta ENERGY          ; ,,
             lda #>ST_ENERGY     ; ,,
@@ -915,7 +943,6 @@ init_build: lda #$00            ; Initialize build flag
             sta DAY+1           ; ,,
             sta MINE_CT         ; Initialize successful mine count
             sta SENSOR_CT       ; Initialize sensor count
-            jsr Music           ; Select default musical theme
             lda #COLONISTS      ; Initialize colonist count
             sta COL_CT          ; ,,
             ldy #GEISERS/2      ; Place geisers
@@ -959,7 +986,6 @@ bord_done:  pla                 ; There's a "hanging" stack entry, so pull it
 -loop:      sta (CURSOR),y      ; ,,
             dey                 ; ,,
             bpl loop            ; ,,
-            jsr MPlay           ; Start music
             lda #" "            ; Make sure that the path to the ship
             sta $1ee7           ;   isn't beset with geisers
             sta $1ee8           ;   ,,
@@ -1108,10 +1134,6 @@ BorderPatt: .byte 3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2
 ; Player character movement sources
 PlSrcL:     .byte 0,<SHIP_NORTH,<SHIP_EAST,<SHIP_SOUTH,<SHIP_WEST 
 PlSrcH:     .byte 0,>SHIP_NORTH,>SHIP_EAST,>SHIP_SOUTH,>SHIP_WEST           
-
-; Musical Themes
-Themes:     .word $4030
-            .word $5555
             
 ; Sound effects for the sound effects player
 ; Each effect has three parameters
@@ -1123,7 +1145,25 @@ FXType:     .byte $11,$56                       ; Successful mine
             .byte $55,$41                       ; Colonist killed
             .byte $2f,$12                       ; Bonus Colonist
             .byte $a3,$14                       ; Level Select
-            .byte $a3,$57                       ; Game Start
+
+; Degree to Note Value
+; Determined with electronic tuner
+Oct0:       .byte 0,194,197,201,204,207,209,212,214,217,219,221,223,225
+            
+; Musical Theme for Game Play
+Theme:      .byte $35,$18,$83,$40,$35,$18
+            .byte $28,$49,$80,$35,$18,$2d,$29,$28
+            .byte $29,$38,$16,$35,$18,$43,$40,$35
+            .byte $18,$28,$29,$40,$35,$18,$2d,$29
+            .byte $28,$29,$48,$40,$1d,$1c,$1d,$18
+            .byte $15,$16,$28,$1d,$1c,$1d,$18,$15
+            .byte $16,$15,$13,$11,$15,$18,$15,$19
+            .byte $1b,$18,$16,$15,$18,$1d,$18,$16
+            .byte $13,$25,$1d,$1c,$1d,$13,$15,$16
+            .byte $28,$1d,$1c,$1d,$13,$15,$16,$15
+            .byte $13,$11,$15,$18,$15,$19,$1b,$18
+            .byte $16,$15,$18,$1d,$18,$16,$13,$25
+            .byte $00
 
 ; Padding to 3583 bytes 
 Padding:    .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
@@ -1140,16 +1180,12 @@ Padding:    .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
             .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
             .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
             .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMA"
+            .asc "ALLWORK"
             
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; VARIABLES
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Game Data
-            .asc "GAME VARIABLES FOLLOW :"
 HISCORE:    .byte $00,$00       ; High Score
 ENERGY:     .byte $00,$00       ; Energy
 DIR:        .byte $00           ; Direction
@@ -1166,12 +1202,10 @@ BUILD_FLAG: .byte $00           ; Bit 7 set if in build mode
 SCORE_FLAG: .byte $00           ; Bit 7 set when score has changed
 
 ; Music Player Memory                 
-THEME       .byte $00,$00       ; Music shift register theme (2 bytes)
-TEMPO       .byte $00           ; Tempo (lower numbers are faster)
-MUCD        .byte $00           ; Tempo countdown
-PLAY        .byte $00           ; Music is playing
-FADE        .byte $00           ; Fadeout volume
-THEME_TMP   .byte $00,$00       ; Theme temporary storage (2 bytes)
+TEMPO:      .byte $05           ; Tempo (jiffies per eighth note)
+COUNTDOWN:  .byte $00           ; Tempo countdown
+PLAY_FLAG:  .byte $00           ; Play flag if bit 7
+PITCH:      .byte $00
 
 ; Sound Effects Player Memory
 REG_FX      .byte $00           ; Sound effects register
