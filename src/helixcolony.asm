@@ -70,8 +70,8 @@ CHAR_D      = $23               ; Destination bitmap character code
 
 ; System Resources
 CINV        = $0314             ; ISR vector
-;NMINV       = $0318             ; Release NMI vector
-NMINV       = $fffe             ; Development NMI non-vector
+NMINV       = $0318             ; Release NMI vector
+;NMINV       = $fffe             ; Development NMI non-vector
 SCREEN      = $1e00             ; Screen character memory (unexpanded)
 COLOR       = $9600             ; Screen color memory (unexpanded)
 IRQ         = $eabf             ; System ISR   
