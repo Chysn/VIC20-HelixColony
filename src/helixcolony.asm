@@ -55,9 +55,9 @@ CH_GEISER   = $2b               ; Geiser
 CO_GEISER   = $00               ; Geiser color
 CO_GEISER_V = $09               ; Visible geiser color
 CH_SENSOR   = $26               ; Sensor signal level
-CO_SENSOR   = $04               ; Level color
+CO_SENSOR   = $01               ; Signal level color
 CH_BORDER   = $1f               ; Border
-CO_BORDER   = $06               ; Border color
+CO_BORDER   = $05               ; Border color
 CH_LSENSOR  = $3b               ; Large sensor signal
 CH_BADMINE  = $24               ; Failed mine
 CO_BADMINE  = $02               ; Failed mine color
@@ -97,6 +97,11 @@ PRTFIX      = $ddcd             ; Decimal display routine (A,X)
 CHROUT      = $ffd2             ; Output one character
 TIME_L      = $a2               ; Jiffy counter low
 TIME_M      = $a1               ; Jiffy counter middle  
+
+; wAxScore Constants
+NO_EFFECT   = $0f
+LEGATO_ON   = $3f
+LEGATO_OFF  = $4f
 
 ; Game Memory - Zeropage Pointers
 CURSOR      = $f9               ; Cursor (2 bytes)
@@ -274,29 +279,8 @@ GameOver:   jsr wsStop          ; Stop the music
             jsr Delay
             lda COL_CT          ; If there are no colonists left, the player
             beq scored          ;   gets no mine bonus
-bonus1:     lda COL_CT          ; Add points for each remaining
-            beq bonus2          ;   colonist
-            dec COL_CT          ;   ,,
-            lda #COL_BONUS      ; Add remaining colonist bonus
-            jsr AddEnergy       ; ,,
-            jsr ScoreBar
-            jsr StatusBar
-            lda #$03
-            jsr Sound
-            lda #$18
-            jsr Delay
-            jmp bonus1
-bonus2:     lda MINE_CT         ; Add points for each successful mine
-            beq scored          ;   built ONLY IF there is at least one
-            dec MINE_CT         ;   colonist left
-            lda #MINE_COST      ; Add mine cost bonus
-            jsr AddEnergy       ; ,,
-            jsr ScoreBar
-            lda #$03
-            jsr Sound
-            lda #$08
-            jsr Delay
-            jmp bonus2
+            jsr CountCol        ; Count colonists for bonus
+            jsr CountMines      ; Count mines for bonus
 scored:     lda HISCORE+1       ; Is the last score greater than
             cmp ENERGY+1        ;   the high score?
             bcc new_hs          ;   ,,
@@ -317,8 +301,68 @@ show_hs:    ldy #21             ; Show High Score
             lda HISCORE+1       ; ,,
             jsr PRTFIX          ; ,,
             jsr ScoreBar
-            jmp Start          
-            
+            jmp Start        
+ 
+; Count Colonists
+; At end of game
+CountCol:   ldy #$00
+-loop:      lda $1fee,y
+            cmp #CH_COLONIST
+            bne nx_col
+            lda #$07
+            sta $97ee,y
+            ldx #COL_BONUS
+            jsr AddBonus
+            lda #CO_COLONIST
+            sta $97ee,y
+nx_col:     iny
+            cpy #$16
+            bne loop
+            rts
+col_bonus:  tya
+            pha
+                        
+; Count Mines
+; At end of game          
+CountMines: ldy #$00
+-loop:      lda $1e00,y
+            cmp #CH_GOODMINE
+            bne ch_hi
+            lda #$07
+            sta $9600,y
+            ldx #MINE_COST
+            jsr AddBonus
+            lda #CO_GOODMINE
+            sta $9600,y
+ch_hi:      lda $1f00,y
+            cmp #CH_GOODMINE
+            bne nx_loc
+            lda #$07
+            sta $9700,y
+            ldx #MINE_COST
+            jsr AddBonus
+            lda #CO_GOODMINE
+            sta $9700,y
+nx_loc:     iny
+            bne loop
+            rts     
+
+; Add Bonus
+; for end of game
+; Bonus Amount in X
+AddBonus:   tya
+            pha
+            txa
+            jsr AddEnergy
+            jsr ScoreBar
+            lda #$03
+            jsr Sound
+            lda #$08
+            jsr Delay
+            pla
+            tay
+            rts
+                                
 ; Toggle Build Flag
 ; Then draw the ship, either landed or flying
 TogBuild:   jsr RSCursor        ; Set Cursor to the player position
@@ -350,7 +394,10 @@ BuildMine:  ldy ENERGY+1        ; Make sure that the colony has enough
             bne has_enough      ;   energy to build a mine
             ldy ENERGY          ;   ,,
             cpy #MINE_COST      ;   ,,
-            bcc build_r         ; If not, don't build it
+            bcs has_enough      ;   ,,
+            lda #$05            ; If there's not enough energy, play a
+            jsr Sound           ;   signal and
+            jmp TogBuild        ;   turn off build mode
 has_enough: jsr RSCursor
             jsr MoveCursor
             jsr GetChar         ; Get the character at the move location
@@ -425,6 +472,7 @@ wsReset:    lda #<Theme
             sta CUR_NOTE+1
             lda #$00
             sta COUNTDOWN
+            sta LEGATO
             rts
 
 ; Begin Playing
@@ -437,6 +485,7 @@ wsStop:     lda #$00
             sta PLAY_FLAG
             sta VOICEM
             sta VOICEL
+            sta NOISE
             rts
             
 ; Service Routine           
@@ -444,7 +493,13 @@ wsService:  bit PLAY_FLAG
             bpl svc_r
             lda COUNTDOWN
             beq fetch_note
-            dec COUNTDOWN
+            cmp #$03            ; Handle legato playing by stopping
+            bcs keep_on         ;   a non-legato note with a few
+            bit LEGATO          ;   jiffies before the end of the
+            bmi keep_on         ;   duration. Legato notes are kept on
+            lda #$00
+            sta VOICEM
+keep_on:    dec COUNTDOWN
             lda VOLUME
             and #$0f
             cmp #$0f
@@ -458,7 +513,7 @@ fetch_note: ldx #$00
             tay                 ; Y holds the full note data
             and #$0f            ; Mask away the duration
             cmp #$0f            ; Is this a effect?
-            beq effect
+            beq wsEffect
             tax
             lda Oct0,x
             sta VOICEM
@@ -481,7 +536,7 @@ keep_vol:   tya
             sta COUNTDOWN
             dey
             bne loop
-            inc CUR_NOTE
+NextNote:   inc CUR_NOTE
             bne svc_r
             inc CUR_NOTE+1
 svc_r:      rts
@@ -489,11 +544,18 @@ eos:        jsr wsReset
             rts       
 
 ; Apply Effect
-; The effect index is in Y            
-effect:     cpy #$00            ; Handle Placeholder
-            bne ch_non_ph       ; ,,
-            rts
-ch_non_ph:  rts                 ; Implement other effects            
+; The effect command is in Y            
+wsEffect:   cpy #NO_EFFECT      ; Handle Placeholder
+            beq effect_r        ; ,,
+ch_legato:  cpy #LEGATO_ON      ; Handle legato
+            bne ch_leg_off      ; ,,
+            lda #$80            ; ,,
+            sta LEGATO          ; ,,
+            jmp NextNote
+ch_leg_off: cpy #LEGATO_OFF     ; Handle legato off
+            bne effect_r        ; ,,
+            lsr LEGATO          ; ,,
+effect_r:   jmp NextNote                       
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; EFFECT PLAYER SUBROUTINES
@@ -590,7 +652,14 @@ Move:       ldy ENERGY+1        ; Does the player have enough energy to move?
             bne may_move        ; ,,
             ldy ENERGY          ; ,,
             bne may_move        ; ,,
-            rts                 ; If not, don't move
+            lda #$05            ; If there's no enough energy to move, play
+            jsr Sound           ;   the out-of-energy sound, and don't move
+            lda #$10            ; Delay so that the sound can finish
+            jsr Delay           ; ,,
+            lda MINE_CT         ; If the player tried to move, was out of
+            bne no_move         ;   energy, and has no way to get more
+            jmp GameOver        ;   energy, end the game.
+no_move:    rts                 ; Return with no movement
 may_move:   sta DIR             ; Set the direction
             jsr PickChar        ; Set Cursor to the right source character
             ldy #$07            ; Initialize the source and destination
@@ -717,7 +786,7 @@ Dead:       lda #$7f            ; Set aux color and high volume
             lda #CH_GEISER      ; Mise well show the player where the
             ldy #CO_GEISER_V    ;   geiser is
             jsr DrawChar        ;   ,,
-            lda #$40            ; Another delay for destruction
+            lda #$30            ; Another delay for destruction
             jsr Delay           ; ,,
             dec COL_CT          ; Kill off a colonist. Way to go, player ;(
             bpl next_ship       ; Enforce low range of 0
@@ -924,10 +993,10 @@ SetupHW:    lda TIME_L          ; Seed random number generator
 InitGame:   jsr CLSR
             jsr wsReset         ; Reset music
             jsr wsPlay          ; Start music
-            lda #<ST_ENERGY     ; Initialize Energy to starting value
-            sta ENERGY          ; ,,
-            lda #>ST_ENERGY     ; ,,
-            sta ENERGY+1        ; ,,
+            lda #<ST_ENERGY+2   ; Initialize Energy to starting value +2
+            sta ENERGY          ;   The +2 is to compensate for the movement
+            lda #>ST_ENERGY+2   ;   used by the ship exiting the Hab
+            sta ENERGY+1        ;   ,,
             lda LEVEL
 ch_harder:  cmp #$01            ; Harder= Subtract half the energy
             bne ch_easier       ; ,,
@@ -954,29 +1023,18 @@ init_build: lda #$00            ; Initialize build flag
             lda #<DrawHab       ; ,,
             ldy #>DrawHab       ; ,,
             jsr PRTSTR          ; ,,
-            lda #<SCREEN        ; Draw the border around the planet
+            lda #<SCREEN+22     ; Draw east-going border
             sta CURSOR          ; ,,
-            lda #>SCREEN        ; ,,
+            lda #>SCREEN+22     ; ,,
             sta CURSOR+1        ; ,,
-            lda #SOUTH          ; Start in the upper-left corner and move
-            jsr MoveCursor      ;   one space south
-            ldy #$00            ; From there, follow the pattern in the
--loop:      tya                 ;   BorderPatt table to surround the play
-            pha                 ;   area
-            lda BorderPatt,y    ;   ,,
-            beq bord_done       ;   ,,
-            tax                 ;   ,,
-            jsr MoveCursor      ;   ,,
-            lda #CH_BORDER      ;   ,,
-            ldy #CO_BORDER      ;   ,,
-            jsr DrawChar        ;   ,,
-            lda #$01            ; A one jiffy delay to make the border
-            jsr Delay           ;   sort of animated
-            pla                 ; The iterator, Y, is protected from MoveCursor
-            tay                 ;   on the stack
-            iny                 ; Continue the pattern until done
-            bne loop            ; ,,
-bord_done:  pla                 ; There's a "hanging" stack entry, so pull it
+            ldx #EAST
+            jsr DrawBorder
+            lda #<SCREEN+483    ; Draw west-going border
+            sta CURSOR          ; ,,
+            lda #>SCREEN+483    ; ,,
+            sta CURSOR+1        ; ,,
+            ldx #WEST
+            jsr DrawBorder
             lda #$e4            ; Set the color for the Status Bar
             sta CURSOR          ; ,,
             lda #$97            ; ,,
@@ -1007,6 +1065,23 @@ bord_done:  pla                 ; There's a "hanging" stack entry, so pull it
             cpy #$08            ; ,,
             bne loop            ; ,,
             rts
+            
+DrawBorder: stx $07
+            ldy #$16
+-loop:      tya
+            pha
+            lda #CH_BORDER
+            ldy #CO_BORDER
+            jsr DrawChar
+            lda #$02
+            jsr Delay
+            ldx $07
+            jsr MoveCursor
+            pla
+            tay
+            dey
+            bne loop 
+            rts           
 
 ; Place Geiser Pair       
 ; Gamma geisers are place in pairs to try to get them evenly
@@ -1122,14 +1197,6 @@ LevelNameH: .byte >NormalTx,>HarderTx,>EasierTx
 DirTable:   .byte 0,$ea,$01,$16,$ff
 JoyTable:   .byte 0,$04,$80,$08,$10,$20            ; Corresponding direction bit
 SearchPatt: .byte 1,2,3,3,4,4,1,1                  ; Sensor search pattern
-
-; Border Pattern Table
-BorderPatt: .byte 3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2
-            .byte 2,2,2,2,2,2,3,3,3,3,3,3,3,3,3,3
-            .byte 3,3,3,3,3,3,3,3,3,3,4,4,4,4,4,4
-            .byte 4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,1
-            .byte 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
-            .byte 1,1,1,0
             
 ; Player character movement sources
 PlSrcL:     .byte 0,<SHIP_NORTH,<SHIP_EAST,<SHIP_SOUTH,<SHIP_WEST 
@@ -1145,49 +1212,56 @@ FXType:     .byte $11,$56                       ; Successful mine
             .byte $55,$41                       ; Colonist killed
             .byte $2f,$12                       ; Bonus Colonist
             .byte $a3,$14                       ; Level Select
+            .byte $55,$11                       ; Not enough energy
 
 ; Degree to Note Value
 ; Determined with electronic tuner
 Oct0:       .byte 0,194,197,201,204,207,209,212,214,217,219,221,223,225
             
 ; Musical Theme for Game Play
-Theme:      .byte $35,$18,$83,$40,$35,$18
+; wAxScore Format
+Theme:      ; I
+            .byte LEGATO_ON,$35,$18,$83,LEGATO_OFF,$40,$35,$18
             .byte $28,$49,$80,$35,$18,$2d,$29,$28
             .byte $29,$38,$16,$35,$18,$43,$40,$35
             .byte $18,$28,$29,$40,$35,$18,$2d,$29
-            .byte $28,$29,$48,$40,$1d,$1c,$1d,$18
-            .byte $15,$16,$28,$1d,$1c,$1d,$18,$15
+            .byte $28,$29,$48,$40
+            
+            ; II
+            .byte LEGATO_ON,$1d,$1c,$1d,$18
+            .byte $15,$16,LEGATO_OFF,$28,LEGATO_ON,$1d,$1c,$1d,$18,$15
             .byte $16,$15,$13,$11,$15,$18,$15,$19
             .byte $1b,$18,$16,$15,$18,$1d,$18,$16
-            .byte $13,$25,$1d,$1c,$1d,$13,$15,$16
-            .byte $28,$1d,$1c,$1d,$13,$15,$16,$15
+            .byte $13,$25,$1d,$1c,$1d,$13,$15,$16,LEGATO_OFF
+            .byte $28,LEGATO_ON,$1d,$1c,$1d,$13,$15,$16,$15
             .byte $13,$11,$15,$18,$15,$19,$1b,$18
-            .byte $16,$15,$18,$1d,$18,$16,$13,$25
-            .byte $00
+            .byte $16,$15,$18,$1d,$18,$16,$13,$25,LEGATO_OFF
 
-; Padding to 3583 bytes 
-Padding:    .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORK"
+            ; II
+            .byte $35,$18,$83,$40,$35,$18
+            .byte $28,$49,$80,$35,$18,$2d,$29,$28
+            .byte $29,$38,$16,$35,$18,$43,$40,$35
+            .byte $18,$28,$29,$40,$35,$18,$2d,$29
+            .byte $28,$29,$48,$40
+
+            ; III
+            .byte LEGATO_ON,$1d,$1c,$1d,$18,$1b,$16,$19,$18
+            .byte LEGATO_OFF,$1d,LEGATO_ON,$1c,$1d,$18,$1b,$16,$19,$18
+            .byte LEGATO_OFF,$15,LEGATO_ON,$16,$18,$1d,$13,$15,$16
+            .byte LEGATO_OFF,$1d,LEGATO_ON,$16,$13,$15,$18,$41,LEGATO_OFF
+            .byte $1d,$1c,$1d,$18,$1b,$16,$19,$18
+            .byte $1d,$1c,$1d,$18,$1b,$16,$19,$18
+            .byte $15,$16,$18,$1d,$13,$15,$16
+            .byte $1d,$16,$13,$15,LEGATO_ON,$18,$41,LEGATO_OFF
+            
+            .byte $00 ; End of Score
             
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; VARIABLES
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Game Data
 HISCORE:    .byte $00,$00       ; High Score
-ENERGY:     .byte $00,$00       ; Energy
+ENERGY:     .byte $00,$00       ; Energy (a.k.a Score)
 DIR:        .byte $00           ; Direction
 UNDER:      .byte $00           ; Character under player
 UNDER_COL:  .byte $00           ; Color under player
@@ -1195,7 +1269,7 @@ SENSOR_CT:  .byte $00           ; Local sensor count
 COL_CT:     .byte $00           ; Colonist count
 DAY:        .byte $00           ; Day number
 MINE_CT:    .byte $00           ; Successful mine count
-LEVEL:      .byte $00,$00       ; Level (0=normal, 1=harder, 2=easier)
+LEVEL:      .byte $00           ; Level (0=normal, 1=harder, 2=easier)
 SCRPAD:     .byte $00           ; Temporary scratchpad
 JOYREG:     .byte $00           ; Joystick register
 BUILD_FLAG: .byte $00           ; Bit 7 set if in build mode
@@ -1204,14 +1278,27 @@ SCORE_FLAG: .byte $00           ; Bit 7 set when score has changed
 ; Music Player Memory                 
 TEMPO:      .byte $05           ; Tempo (jiffies per eighth note)
 COUNTDOWN:  .byte $00           ; Tempo countdown
-PLAY_FLAG:  .byte $00           ; Play flag if bit 7
-PITCH:      .byte $00
+PLAY_FLAG:  .byte $00           ; Play flag if bit 7 is set
+LEGATO:     .byte $00           ; Legato if bit 7 is set
 
 ; Sound Effects Player Memory
 REG_FX      .byte $00           ; Sound effects register
 FXLEN       .byte $00           ; Sound effects length
 FXCD        .byte $00           ; Sound effects countdown
 FXCDRS      .byte $00           ; Countdown reset value
+
+; Padding to 3583 bytes
+Padding:    .asc "2020 JASON JUSTIAN",$0d
+            .asc "JJUSTIAN@GMAIL.COM",$0d
+            .asc "BEIGEMAZE.COM/VICLAB",$0d
+            .asc "RELEASED UNDER CREATIVE COMMONS",$0d
+            .asc "ATTRIBUTION-NONCOMMERCIAL 4.0",$0d
+            .asc "INTERNATIONAL PUBLIC LICENSE",$0d
+            .asc "---------------------------------"
+            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
+            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
+            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
+            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY",$00
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; CUSTOM CHARACTER SET
@@ -1268,7 +1355,7 @@ BITMAP_D:   .byte $00,$00,$00,$00,$00,$00,$00,$00  ; # Bitmap Destination ($23)
             .byte $00,$00,$04,$04,$14,$14,$54,$54  ; Signal 3
             .byte $02,$02,$0a,$0a,$2a,$2a,$aa,$aa  ; Signal 4
             .byte $38,$00,$38,$54,$10,$10,$28,$44  ; Colonist Symbol
-            .byte $30,$00,$0c,$00,$30,$08,$28,$aa  ; Gamma geiser
+            .byte $0c,$30,$00,$0c,$30,$00,$28,$aa  ; Gamma geiser
             .byte $18,$24,$24,$ff,$7e,$18,$24,$42  ; , Landed player ship
 SHIP_WEST:  .byte $08,$14,$24,$2f,$7e,$f8,$10,$00  ; Ship moving west 
 SHIP_EAST:  .byte $10,$28,$24,$f6,$7f,$1c,$08,$00  ; Ship moving east
