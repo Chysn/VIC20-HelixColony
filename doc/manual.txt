@@ -1,0 +1,56 @@
+H E L I X C O L O N Y
+
+The year is 1999. Earth has entrusted you to establish the Helix Colony in the
+Procyon system.
+
+* Explore the planet
+* Build gamma mines
+* Protect your crew
+
+You have sixty days.
+
+DIRECTIVE: EXPLORE THE PLANET
+
+Use the joystick to move your craft around the planet in four directions. Each
+move consumes one energy. If you have 0 energy, your craft cannot move.
+
+Your craft is equipped with a sensor that records its readings on your 
+PlanetDisplay. It tells you how many gamma geisers are adjacent to your craft,
+up to four. The current reading is in the lower left-hand corner of your
+PlanetDisplay.
+
+
+DIRECTIVE: BUILD GAMMA MINES
+
+Your survival depends on energy self-sufficiency. Your Hab landed with a limited
+amount of energy, so you must build gamma geisers over gamma mines to sustain
+the colony. The Hab itself consumes one energy per day.
+
+When you think you know where a gamma geiser is located, based on sensor
+readings, press the Fire button. Your ship will land. Move the joystick toward
+the sector on which you want to build a gamma geiser. A gamma mine costs 50
+energy to build.
+
+If you built the mine on a geiser, the mine will produce an extra 3 energy per
+day, which you can use to explore and build additional mines.
+
+If you built the mine anywhere else, it will not produce energy.
+
+
+DIRECTIVE: PROTECT YOUR CREW
+
+Unfortunately, gamma geisers are invisible to the eye. If you fly your craft
+over one, the ship and its pilot will be destroyed. Only six of you made the
+trip, so heed your sensor readings!
+
+You can safely fly your craft over gamma mines.
+
+
+EVALUATION
+
+After sixty days, your colony will be evaluated.
+
+* You will score 50 bonus energy for each remaining crew member
+* You will score 50 bonus energy for each successful gamma mine
+* If your entire crew is killed before sixty days, the game ends with no bonuses
+* The game will also end without bonuses if you run out of energy with no mines
