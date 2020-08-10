@@ -29,7 +29,7 @@ BASIC:      .byte $0b,$04,$2a,$00,$9e,$34,$31,$31
 ; Starting Constants
 ST_ENERGY   = 200               ; Starting energy
 COLONISTS   = 6                 ; Starting colonists
-GEISERS     = 48                ; Approximate number of geisers
+GEYSERS     = 48                ; Approximate number of geysers
 LENGTH      = 60                ; Days in a game
 
 ; Scoring Constants
@@ -51,9 +51,9 @@ PL_SPEED    = $02               ; Player speed (delay per pixel, in jiffies)
 CH_PLAYER   = $21               ; Player character code
 CO_PLAYER   = $07               ; Player color
 CH_LANDED   = $2c               ; Landed ship
-CH_GEISER   = $2b               ; Geiser
-CO_GEISER   = $00               ; Geiser color
-CO_GEISER_V = $09               ; Visible geiser color
+CH_GEYSER   = $2b               ; 
+CO_GEYSER   = $00               ;  color
+CO_GEYSER_V = $09               ; Visible geyser color
 CH_SENSOR   = $26               ; Sensor signal level
 CO_SENSOR   = $01               ; Signal level color
 CH_BORDER   = $1f               ; Border
@@ -401,7 +401,7 @@ BuildMine:  ldy ENERGY+1        ; Make sure that the colony has enough
 has_enough: jsr RSCursor
             jsr MoveCursor
             jsr GetChar         ; Get the character at the move location
-            cmp #CH_GEISER      ; Is it a geiser?
+            cmp #CH_GEYSER      ; Is it a geyser?
             beq build_good      ; If so, build a successful mine
             cmp #" "            ; Is it a border or hab?
             bcc build_r         ; If so, do nothing
@@ -720,12 +720,12 @@ do_move:    pha                 ; Put character on stack for later use as UNDER
             ; Fall through to Sensor
 
 ; Activate Sensor    
-; Check the area around the player for geisers and upate the character
+; Check the area around the player for geysers and upate the character
 ; memory and Status Bar with the results        
 Sensor:     ldx #$00
             stx SENSOR_CT
             lda UNDER
-            cmp #CH_GEISER
+            cmp #CH_GEYSER
             beq Dead
             ldy #$00
 -loop:      tya
@@ -735,12 +735,12 @@ Sensor:     ldx #$00
             jsr MoveCursor
             ldx #$00
             lda (CURSOR,x)
-            cmp #CH_GEISER
+            cmp #CH_GEYSER
             beq detected
             cmp #CH_GOODMINE
-            bne no_geiser
+            bne no_geyser
 detected:   inc SENSOR_CT
-no_geiser:  pla
+no_geyser:  pla
             tay
             iny
             cpy #$08
@@ -763,7 +763,7 @@ add_sensor: sta SENSOR_CT
             sta UNDER_COL
 sensor_r:   jmp StatusBar
 
-; Player hit Geiser 
+; Player hit Geyser 
 ; Move player back to starting point           
 Dead:       lda #$7f            ; Set aux color and high volume
             sta VOLUME          ; ,,
@@ -783,8 +783,8 @@ Dead:       lda #$7f            ; Set aux color and high volume
             jsr Delay           ; ,,
             lda #$00            ; Shut off the explosion sound
             sta NOISE           ; ,,
-            lda #CH_GEISER      ; Mise well show the player where the
-            ldy #CO_GEISER_V    ;   geiser is
+            lda #CH_GEYSER      ; Mise well show the player where the
+            ldy #CO_GEYSER_V    ;   geyser is
             jsr DrawChar        ;   ,,
             lda #$30            ; Another delay for destruction
             jsr Delay           ; ,,
@@ -1014,8 +1014,8 @@ init_build: lda #$00            ; Initialize build flag
             sta SENSOR_CT       ; Initialize sensor count
             lda #COLONISTS      ; Initialize colonist count
             sta COL_CT          ; ,,
-            ldy #GEISERS/2      ; Place geisers
--loop:      jsr NewGeiser       ; ,,
+            ldy #GEYSERS/2      ; Place geysers
+-loop:      jsr NewGeyser       ; ,,
             dey                 ; ,,
             bne loop            ; ,,
             ldy #9              ; Draw Hab
@@ -1045,11 +1045,11 @@ init_build: lda #$00            ; Initialize build flag
             dey                 ; ,,
             bpl loop            ; ,,
             lda #" "            ; Make sure that the path to the ship
-            sta $1ee7           ;   isn't beset with geisers
+            sta $1ee7           ;   isn't beset with geysers
             sta $1ee8           ;   ,,
             sta $1ee9           ;   ,,
             jsr NewShip         ; Place ship
-            jsr RSCursor        ; Clear the area around the ship of geisers
+            jsr RSCursor        ; Clear the area around the ship of geysers
             ldy #$00            ; ,,
 -loop:      tya                 ; ,,
             pha                 ; ,,
@@ -1083,25 +1083,25 @@ DrawBorder: stx $07
             bne loop 
             rts           
 
-; Place Geiser Pair       
-; Gamma geisers are place in pairs to try to get them evenly
+; Place  Pair       
+; Gamma geysers are place in pairs to try to get them evenly
 ; distributed between the two pages of screen memory     
-NewGeiser:  tya
+NewGeyser:  tya
             pha
             lda #>SCREEN
             sta CURSOR+1
             jsr BASRND
             lda RNDNUM
             sta CURSOR
-            lda #CH_GEISER
-            ldy #CO_GEISER
+            lda #CH_GEYSER
+            ldy #CO_GEYSER
             jsr DrawChar
             inc CURSOR+1
             jsr BASRND
             lda RNDNUM
             sta CURSOR
-            lda #CH_GEISER
-            ldy #CO_GEISER
+            lda #CH_GEYSER
+            ldy #CO_GEYSER
             jsr DrawChar  
             pla
             tay
@@ -1355,7 +1355,7 @@ BITMAP_D:   .byte $00,$00,$00,$00,$00,$00,$00,$00  ; # Bitmap Destination ($23)
             .byte $00,$00,$04,$04,$14,$14,$54,$54  ; Signal 3
             .byte $02,$02,$0a,$0a,$2a,$2a,$aa,$aa  ; Signal 4
             .byte $38,$00,$38,$54,$10,$10,$28,$44  ; Colonist Symbol
-            .byte $0c,$30,$00,$0c,$30,$00,$28,$aa  ; Gamma geiser
+            .byte $0c,$30,$00,$0c,$30,$00,$28,$aa  ; Gamma geyser
             .byte $18,$24,$24,$ff,$7e,$18,$24,$42  ; , Landed player ship
 SHIP_WEST:  .byte $08,$14,$24,$2f,$7e,$f8,$10,$00  ; Ship moving west 
 SHIP_EAST:  .byte $10,$28,$24,$f6,$7f,$1c,$08,$00  ; Ship moving east
