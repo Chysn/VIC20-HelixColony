@@ -478,9 +478,11 @@ wsReset:    lda #<Theme
             rts
 
 ; Begin Playing
-wsPlay:     lda #$80
+wsPlay:     lda ENABLE_MUS
+            beq play_r
+            lda #$80
             sta PLAY_FLAG
-            rts
+play_r:     rts
             
 ; Stop Playing
 wsStop:     lda #$00
@@ -1125,6 +1127,14 @@ SetLevel:   jsr Joystick        ; Debounce the joystick
             tay                 ;   ,,
             lda LevelNameL,x    ;   ,,
             jsr PRTSTR          ; Display the level name
+            lda #<MusicTx       ; Show the "MUSIC" text
+            ldy #>MusicTx       ; ,,
+            jsr PRTSTR          ; ,,
+            ldx ENABLE_MUS      ; Use the music enable value as an
+            lda MusicH,x        ;   index to find the ON/OFF pointer
+            tay                 ;   ,,
+            lda MusicL,x        ;   ,,
+            jsr PRTSTR          ;   ,,
 level_js:   jsr Joystick        ; Wait for joystick input
             beq level_js        ; ,,
             cmp #FIRE           ; If fire is pressed, continue to whatever
@@ -1136,15 +1146,23 @@ ch_west:    cmp #WEST           ; If the joystick was moved west, decrease
             bpl set_done        ;   ,,
             lda #$02            ; If the level goes below 0, set it back
             sta LEVEL           ;   to 2
-            jmp set_done        ;   ,,
+            bne set_done        ;   ,,
 ch_east:    cmp #EAST           ; If the joystick was moved east, increase
-            bne level_js        ;   the level
+            bne ch_north        ;   the level
             inc LEVEL           ;   ,,
-            lda LEVEL           ; I the level goes above 2, set it back
+            lda LEVEL           ; If the level goes above 2, set it back
             cmp #$03            ;   to 0
             bne set_done        ;   ,,
             lda #$00            ;   ,,
             sta LEVEL           ;   ,,
+            beq set_done
+ch_north:   cmp #NORTH          ; Joystick north enables music
+            bne ch_south
+            lda #$01
+            sta ENABLE_MUS
+            bne set_done
+ch_south:   lda #$00            ; South is the only direction left   
+            sta ENABLE_MUS      ;   so disable music          
 set_done:   lda #$04            ; Play a sound when the level changes
             jsr Sound           ; ,,
             jmp SetLevel
@@ -1191,12 +1209,19 @@ BuildTx:    .asc " ",$9e,$3a," 50 ",$1e,"MOVE TO BUILD "
             
 ; Set Level Text and Table            
 LevelTx:    .asc $1e,"     L",$1c,"EVEL",$00  
-NormalTx:   .asc $1e,"N",$1c,"ORMAL",$00
-HarderTx:   .asc $1e,"H",$1c,"ARDER",$00
-EasierTx:   .asc $1e,"E",$1c,"ASIER",$00
+NormalTx:   .asc $1e,"N",$1c,"ORMAL",$0d,$0d,$00
+HarderTx:   .asc $1e,"H",$1c,"ARDER",$0d,$0d,$00
+EasierTx:   .asc $1e,"E",$1c,"ASIER",$0d,$0d,$00
 LevelNameL: .byte <NormalTx,<HarderTx,<EasierTx
 LevelNameH: .byte >NormalTx,>HarderTx,>EasierTx
- 
+
+; Enable Music Text and Table
+MusicTx:    .asc $1c,"     M",$1e,"USIC",$00
+MusOnTx:    .asc $1c,"O",$1e,"FF",$00
+MusOffTx:   .asc $1c,"O",$1e,"N ",$00
+MusicL:     .byte <MusOnTx,<MusOffTx
+MusicH:     .byte >MusOnTx,>MusOffTx
+
 ; Direction Tables                       
 DirTable:   .byte 0,$ea,$01,$16,$ff
 JoyTable:   .byte 0,$04,$80,$08,$10,$20            ; Corresponding direction bit
@@ -1284,6 +1309,7 @@ TEMPO:      .byte $05           ; Tempo (jiffies per eighth note)
 COUNTDOWN:  .byte $00           ; Tempo countdown
 PLAY_FLAG:  .byte $00           ; Play flag if bit 7 is set
 LEGATO:     .byte $00           ; Legato if bit 7 is set
+ENABLE_MUS  .byte $01           ; Music player is enabled if 1
 
 ; Sound Effects Player Memory
 REG_FX      .byte $00           ; Sound effects register
@@ -1298,9 +1324,7 @@ Padding:    .asc "2020 JASON JUSTIAN",$0d
             .asc "RELEASED UNDER CREATIVE COMMONS",$0d
             .asc "ATTRIBUTION-NONCOMMERCIAL 4.0",$0d
             .asc "INTERNATIONAL PUBLIC LICENSE",$0d
-            .asc "-------------------------"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
+            .asc "-------------"
             .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
             .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY",$00
 
