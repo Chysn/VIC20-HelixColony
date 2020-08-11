@@ -150,8 +150,10 @@ Main:       bit SCORE_FLAG      ; The score flag is set by the ISR; check it
 ch_end:     lda COL_CT          ; Any colonists left?
             beq game_over       ; ,,
             lda DAY             ; Any time left?
-            cmp #LENGTH         ; ,,
+            cmp #LENGTH+1       ; ,,
             bcc game_on         ; ,,
+            lda #LENGTH         ; Force display to final day number
+            sta DAY             ; ,,
 game_over:  jmp GameOver        ; Game Over if any game-ending conditions
 game_on:    jsr Joystick        ; Read the joystick
             bne ch_fire         ; If no movement, shut off the engine noise
@@ -993,23 +995,8 @@ SetupHW:    lda TIME_L          ; Seed random number generator
 InitGame:   jsr CLSR
             jsr wsReset         ; Reset music
             jsr wsPlay          ; Start music
-            lda #<ST_ENERGY+2   ; Initialize Energy to starting value +2
-            sta ENERGY          ;   The +2 is to compensate for the movement
-            lda #>ST_ENERGY+2   ;   used by the ship exiting the Hab
-            sta ENERGY+1        ;   ,,
-            lda LEVEL
-ch_harder:  cmp #$01            ; Harder= Subtract half the energy
-            bne ch_easier       ; ,,
-            lda #ST_ENERGY/2    ; ,,
-            jsr UseEnergy       ; ,,
-ch_easier:  cmp #$02            ; Easier= Add half the energy
-            bne init_build      ; ,,
-            lda #ST_ENERGY/2    ; ,,
-            jsr AddEnergy       ; ,,
 init_build: lda #$00            ; Initialize build flag
             sta BUILD_FLAG      ; ,,
-            sta DAY             ; Initialize day number
-            sta DAY+1           ; ,,
             sta MINE_CT         ; Initialize successful mine count
             sta SENSOR_CT       ; Initialize sensor count
             lda #COLONISTS      ; Initialize colonist count
@@ -1048,7 +1035,22 @@ init_build: lda #$00            ; Initialize build flag
             sta $1ee7           ;   isn't beset with geysers
             sta $1ee8           ;   ,,
             sta $1ee9           ;   ,,
-            jsr NewShip         ; Place ship
+            lda #$00            ; Reset timer so the game always has the same
+            sta TIME_L          ;   starting conditions
+            lda #<ST_ENERGY+3   ; Initialize Energy to starting value +3
+            sta ENERGY          ;   The +3 is to compensate for the movement
+            lda #>ST_ENERGY+3   ;   used by the ship exiting the Hab
+            sta ENERGY+1        ;   ,,
+            lda LEVEL
+ch_harder:  cmp #$01            ; Harder= Subtract half the energy
+            bne ch_easier       ; ,,
+            lda #ST_ENERGY/2    ; ,,
+            jsr UseEnergy       ; ,,
+ch_easier:  cmp #$02            ; Easier= Add half the energy
+            bne place_ship      ; ,,
+            lda #ST_ENERGY/2    ; ,,
+            jsr AddEnergy       ; ,,
+place_ship: jsr NewShip         ; Place ship
             jsr RSCursor        ; Clear the area around the ship of geysers
             ldy #$00            ; ,,
 -loop:      tya                 ; ,,
@@ -1064,6 +1066,8 @@ init_build: lda #$00            ; Initialize build flag
             iny                 ; ,,
             cpy #$08            ; ,,
             bne loop            ; ,,
+start_day:  lda #$01            ; Start at Day 1
+            sta DAY             ; ,,
             rts
             
 DrawBorder: stx $07
@@ -1294,7 +1298,7 @@ Padding:    .asc "2020 JASON JUSTIAN",$0d
             .asc "RELEASED UNDER CREATIVE COMMONS",$0d
             .asc "ATTRIBUTION-NONCOMMERCIAL 4.0",$0d
             .asc "INTERNATIONAL PUBLIC LICENSE",$0d
-            .asc "---------------------------------"
+            .asc "-------------------------"
             .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
             .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
             .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
