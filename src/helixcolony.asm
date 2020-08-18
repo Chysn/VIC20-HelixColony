@@ -51,8 +51,8 @@ PL_SPEED    = $02               ; Player speed (delay per pixel, in jiffies)
 CH_PLAYER   = $21               ; Player character code
 CO_PLAYER   = $07               ; Player color
 CH_LANDED   = $2c               ; Landed ship
-CH_GEYSER   = $2b               ; 
-CO_GEYSER   = $00               ;  color
+CH_GEYSER   = $2b               ; Geyser
+CO_GEYSER   = $00               ; Hidden geyser color
 CO_GEYSER_V = $09               ; Visible geyser color
 CH_SENSOR   = $26               ; Sensor signal level
 CO_SENSOR   = $01               ; Signal level color
@@ -156,8 +156,15 @@ ch_end:     lda COL_CT          ; Any colonists left?
             sta DAY             ; ,,
 game_over:  jmp GameOver        ; Game Over if any game-ending conditions
 game_on:    jsr Joystick        ; Read the joystick
-            bne ch_fire         ; If no movement, shut off the engine noise
-            lda #$00            ;   and check joystick again
+            bne ch_fire         ; If no movement, draw the ship, shut off the
+            jsr RSCursor        ;   engine noise, and check the joystick again
+            jsr GetChar         ;   ,, (Don't redraw ship if landed)
+            cmp #CH_LANDED      ;   ,,
+            beq stop_eng        ;   ,,
+            lda #CH_PLAYER      ;   ,,
+            ldy #CO_PLAYER      ;   ,,
+            jsr DrawChar        ;   ,,
+stop_eng:   lda #$00            ;   ,,
             sta NOISE           ;   ,,
             beq Main            ;   ,,
 ch_fire:    cmp #FIRE           ; Has fire been pressed?
@@ -714,9 +721,6 @@ do_move:    pha                 ; Put character on stack for later use as UNDER
             pla                 ; Get the character that WAS under the
             sta UNDER           ;   destination off the stack and save it
             jsr UDPlayer        ; Update player location
-            lda #CH_PLAYER      ; Draw player character at the CURSOR location
-            ldy #CO_PLAYER      ; ,,
-            jsr DrawChar        ; ,,
             lda #$01            ; Take one energy unit per turn
             jsr UseEnergy       ; ,,
             lda #$00            ; Set DIR to 0, which will allow volume to go
@@ -1115,9 +1119,7 @@ NewGeyser:  tya
 
 ; Set Level
 ; Allow player to set starting energy, and return when Fire is pressed
-SetLevel:   jsr Joystick        ; Debounce the joystick
-            bne SetLevel        ; ,,
-            ldy #16             ; Show the "LEVEL" text
+SetLevel:   ldy #16             ; Show the "LEVEL" text
             jsr TextLine        ; ,,
             lda #<LevelTx       ; ,,
             ldy #>LevelTx       ; ,,
@@ -1135,6 +1137,8 @@ SetLevel:   jsr Joystick        ; Debounce the joystick
             tay                 ;   ,,
             lda MusicL,x        ;   ,,
             jsr PRTSTR          ;   ,,
+-loop:      jsr Joystick        ; Debounce the joystick
+            bne loop            ; ,,                        
 level_js:   jsr Joystick        ; Wait for joystick input
             beq level_js        ; ,,
             cmp #FIRE           ; If fire is pressed, continue to whatever
@@ -1324,7 +1328,7 @@ Padding:    .asc "2020 JASON JUSTIAN",$0d
             .asc "RELEASED UNDER CREATIVE COMMONS",$0d
             .asc "ATTRIBUTION-NONCOMMERCIAL 4.0",$0d
             .asc "INTERNATIONAL PUBLIC LICENSE",$0d
-            .asc "-------------"
+            .asc "---"
             .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
             .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY",$00
 
@@ -1384,7 +1388,7 @@ BITMAP_D:   .byte $00,$00,$00,$00,$00,$00,$00,$00  ; # Bitmap Destination ($23)
             .byte $02,$02,$0a,$0a,$2a,$2a,$aa,$aa  ; Signal 4
             .byte $38,$00,$38,$54,$10,$10,$28,$44  ; Colonist Symbol
             .byte $0c,$30,$00,$0c,$30,$00,$28,$aa  ; Gamma geyser
-            .byte $18,$24,$24,$ff,$7e,$18,$24,$42  ; , Landed player ship
+            .byte $00,$18,$24,$24,$ff,$7e,$24,$42  ; , Landed player ship
 SHIP_WEST:  .byte $08,$14,$24,$2f,$7e,$f8,$10,$00  ; Ship moving west 
 SHIP_EAST:  .byte $10,$28,$24,$f6,$7f,$1c,$08,$00  ; Ship moving east
 SHIP_SOUTH: .byte $00,$18,$24,$e7,$7e,$18,$00,$00  ; Ship moving south
@@ -1403,5 +1407,5 @@ SHIP_SOUTH: .byte $00,$18,$24,$e7,$7e,$18,$00,$00  ; Ship moving south
             .byte $00,$00,$00,$00,$f0,$f0,$f0,$f0  ; Large Signal 2
             .byte $00,$00,$f0,$f0,$f0,$f0,$f0,$f0  ; Large Signal 3
             .byte $f0,$f0,$f0,$f0,$f0,$f0,$f0,$f0  ; Large Signal 4
-SHIP_NORTH: .byte $00,$18,$24,$ff,$7e,$3c,$00,$00  ; Ship moving north
+SHIP_NORTH: .byte $00,$18,$24,$ff,$7e,$18,$00,$00  ; Ship moving north
             
