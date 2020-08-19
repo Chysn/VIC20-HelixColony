@@ -280,7 +280,8 @@ show_day:   lda #$00
             jmp PRTFIX
             
 ; Game Over
-GameOver:   jsr wsStop          ; Stop the music
+GameOver:   lsr GAME_FLAG       ; Clear the game flag
+            jsr wsStop          ; Stop the music
             lda #<GameOverTx    ; Show Game Over message
             ldy #>GameOverTx    ; ,,
             jsr PRTSTR          ; ,,
@@ -461,7 +462,9 @@ AddEnergy:  clc
 add_r:	    jmp pos                      
 
 ; Daily Energy Maintenance
-DailyMaint: ldy MINE_CT         ; Each successful mine generates energy
+DailyMaint: bit GAME_FLAG       ; Don't do daily maintenance if the
+            bpl maint_r         ;   game is over
+            ldy MINE_CT         ; Each successful mine generates energy
             beq maint_use       ; No mines
 -loop:      lda #MINE_EN        ;   every day
             jsr AddEnergy       ;   ,,
@@ -469,7 +472,7 @@ DailyMaint: ldy MINE_CT         ; Each successful mine generates energy
             bne loop            ;   ,,
 maint_use:  lda #$01            ; The colonists use one energy per day
             jsr UseEnergy       ; ,,            
-            rts            
+maint_r:    rts            
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; WAXSCORE IRQ PLAYER
@@ -1074,6 +1077,8 @@ place_ship: jsr NewShip         ; Place ship
             bne loop            ; ,,
 start_day:  lda #$01            ; Start at Day 1
             sta DAY             ; ,,
+            lda #$80            ; Set game flag
+            sta GAME_FLAG       ; ,,
             rts
             
 DrawBorder: stx $07
@@ -1307,6 +1312,7 @@ SCRPAD:     .byte $00           ; Temporary scratchpad
 JOYREG:     .byte $00           ; Joystick register
 BUILD_FLAG: .byte $00           ; Bit 7 set if in build mode
 SCORE_FLAG: .byte $00           ; Bit 7 set when score has changed
+GAME_FLAG:  .byte $00           ; Bit 7 set when the game is running
 
 ; Music Player Memory                 
 TEMPO:      .byte $05           ; Tempo (jiffies per eighth note)
@@ -1328,9 +1334,8 @@ Padding:    .asc "2020 JASON JUSTIAN",$0d
             .asc "RELEASED UNDER CREATIVE COMMONS",$0d
             .asc "ATTRIBUTION-NONCOMMERCIAL 4.0",$0d
             .asc "INTERNATIONAL PUBLIC LICENSE",$0d
-            .asc "---"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY"
-            .asc "ALLWORKANDNOPLAYMAKESJACKADULLBOY",$00
+            .asc "------------",$00
+            .asc "ALL WORK AND NO PLAY MAKES JACK A DULL BOY",$00
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; CUSTOM CHARACTER SET
