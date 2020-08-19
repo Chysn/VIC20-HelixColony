@@ -1217,7 +1217,7 @@ BuildTx:    .asc " ",$9e,$3a," 50 ",$1e,"MOVE TO BUILD "
             .asc $9f,CH_BADMINE,$1e,$00  
             
 ; Set Level Text and Table            
-LevelTx:    .asc $1e,"     L",$1c,"EVEL",$00  
+LevelTx:    .asc $05,"    K",$1e,"L",$1c,"EVEL",$00  
 NormalTx:   .asc $1e,"N",$1c,"ORMAL",$0d,$0d,$00
 HarderTx:   .asc $1e,"H",$1c,"ARDER",$0d,$0d,$00
 EasierTx:   .asc $1e,"E",$1c,"ASIER",$0d,$0d,$00
@@ -1225,7 +1225,7 @@ LevelNameL: .byte <NormalTx,<HarderTx,<EasierTx
 LevelNameH: .byte >NormalTx,>HarderTx,>EasierTx
 
 ; Enable Music Text and Table
-MusicTx:    .asc $1c,"     M",$1e,"USIC",$00
+MusicTx:    .asc $05,"    Q",$1c,"M",$1e,"USIC",$00
 MusOnTx:    .asc $1c,"O",$1e,"FF",$00
 MusOffTx:   .asc $1c,"O",$1e,"N ",$00
 MusicL:     .byte <MusOnTx,<MusOffTx
@@ -1334,7 +1334,7 @@ Padding:    .asc "2020 JASON JUSTIAN",$0d
             .asc "RELEASED UNDER CREATIVE COMMONS",$0d
             .asc "ATTRIBUTION-NONCOMMERCIAL 4.0",$0d
             .asc "INTERNATIONAL PUBLIC LICENSE",$0d
-            .asc "------------",$00
+            .asc "----------",$00
             .asc "ALL WORK AND NO PLAY MAKES JACK A DULL BOY",$00
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1360,13 +1360,15 @@ CharSet:    .byte $c0,$03,$3c,$03,$c0,$3c,$c0,$03  ; Ship explosion (multicolor)
             .byte $84,$84,$84,$b4,$84,$84,$84,$00  ; H
             .byte $10,$10,$10,$10,$10,$10,$10,$00  ; I
             .byte $04,$00,$04,$04,$84,$84,$78,$00  ; J
-            .byte $84,$88,$90,$a0,$90,$88,$84,$00  ; K
+;           .byte $84,$88,$90,$a0,$90,$88,$84,$00  ; K
+            .byte $00,$00,$00,$28,$6c,$28,$00,$00  ; Left/Right (for K)
             .byte $80,$80,$80,$80,$80,$40,$3c,$00  ; L
             .byte $82,$c4,$a8,$90,$80,$80,$80,$00  ; M
             .byte $84,$c4,$a4,$94,$8c,$04,$84,$00  ; N
             .byte $30,$08,$84,$84,$84,$48,$30,$00  ; O
             .byte $b8,$04,$04,$f8,$80,$80,$80,$00  ; P
-            .byte $18,$04,$02,$82,$92,$54,$38,$10  ; Q
+;           .byte $18,$04,$02,$82,$92,$54,$38,$10  ; Q
+            .byte $00,$00,$10,$38,$00,$38,$10,$00  ; Up/Down (for Q)
             .byte $f8,$04,$04,$f8,$80,$88,$84,$00  ; R
             .byte $70,$84,$80,$78,$04,$84,$78,$00  ; S
             .byte $f2,$10,$10,$10,$10,$10,$10,$00  ; T
